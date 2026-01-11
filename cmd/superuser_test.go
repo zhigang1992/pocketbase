@@ -309,6 +309,82 @@ func TestSuperuserDeleteCommand(t *testing.T) {
 	}
 }
 
+func TestSuperuserImpersonateCommand(t *testing.T) {
+	app, _ := tests.NewTestApp()
+	defer app.Cleanup()
+
+	scenarios := []struct {
+		name        string
+		args        []string
+		expectError bool
+	}{
+		{
+			"missing arguments",
+			[]string{},
+			true,
+		},
+		{
+			"missing user identifier",
+			[]string{"users"},
+			true,
+		},
+		{
+			"nonexisting collection",
+			[]string{"nonexisting", "test@example.com"},
+			true,
+		},
+		{
+			"non-auth collection",
+			[]string{"demo1", "test@example.com"},
+			true,
+		},
+		{
+			"nonexisting user by email",
+			[]string{"users", "nonexisting@example.com"},
+			true,
+		},
+		{
+			"nonexisting user by id",
+			[]string{"users", "nonexisting_id"},
+			true,
+		},
+		{
+			"valid user by email",
+			[]string{"users", "test@example.com"},
+			false,
+		},
+		{
+			"valid user by id",
+			[]string{"users", "4q1xlclmfloku33"},
+			false,
+		},
+		{
+			"valid user with custom duration",
+			[]string{"users", "test@example.com", "--duration", "3600"},
+			false,
+		},
+		{
+			"valid superuser by email",
+			[]string{core.CollectionNameSuperusers, "test@example.com"},
+			false,
+		},
+	}
+
+	for _, s := range scenarios {
+		t.Run(s.name, func(t *testing.T) {
+			command := cmd.NewSuperuserCommand(app)
+			command.SetArgs(append([]string{"impersonate"}, s.args...))
+
+			err := command.Execute()
+
+			hasErr := err != nil
+			if s.expectError != hasErr {
+				t.Fatalf("Expected hasErr %v, got %v (%v)", s.expectError, hasErr, err)
+			}
+		})
+	}
+}
+
 func TestSuperuserOTPCommand(t *testing.T) {
 	app, _ := tests.NewTestApp()
 	defer app.Cleanup()
