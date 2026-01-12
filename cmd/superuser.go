@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/fatih/color"
 	"github.com/go-ozzo/ozzo-validation/v4/is"
@@ -24,6 +25,7 @@ func NewSuperuserCommand(app core.App) *cobra.Command {
 	command.AddCommand(superuserUpdateCommand(app))
 	command.AddCommand(superuserDeleteCommand(app))
 	command.AddCommand(superuserOTPCommand(app))
+	command.AddCommand(superuserImpersonateCommand(app))
 
 	return command
 }
@@ -206,6 +208,69 @@ func superuserOTPCommand(app core.App) *cobra.Command {
 			return nil
 		},
 	}
+
+	return command
+}
+
+func superuserImpersonateCommand(app core.App) *cobra.Command {
+	var durationFlag int64
+
+	command := &cobra.Command{
+		Use:          "impersonate",
+		Example:      "superuser impersonate users user@example.com\nsuperuser impersonate users user@example.com --duration 3600",
+		Short:        "Generates an impersonation auth token for a user in an auth collection",
+		SilenceUsage: true,
+		RunE: func(command *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return errors.New("missing collection and user identifier arguments")
+			}
+
+			collectionArg := args[0]
+			userIdentifier := args[1]
+
+			collection, err := app.FindCachedCollectionByNameOrId(collectionArg)
+			if err != nil {
+				return fmt.Errorf("failed to find collection %q: %w", collectionArg, err)
+			}
+
+			if !collection.IsAuth() {
+				return fmt.Errorf("collection %q is not an auth collection", collectionArg)
+			}
+
+			// Try to find user by email first, then by ID
+			var record *core.Record
+			if is.EmailFormat.Validate(userIdentifier) == nil {
+				record, err = app.FindAuthRecordByEmail(collection, userIdentifier)
+			} else {
+				record, err = app.FindRecordById(collection, userIdentifier)
+			}
+
+			if err != nil {
+				return fmt.Errorf("failed to find user %q in collection %q: %w", userIdentifier, collectionArg, err)
+			}
+
+			duration := time.Duration(durationFlag) * time.Second
+
+			token, err := record.NewStaticAuthToken(duration)
+			if err != nil {
+				return fmt.Errorf("failed to generate impersonation token: %w", err)
+			}
+
+			color.New(color.BgGreen, color.FgBlack).Printf("Successfully generated impersonation token for %q:", record.Email())
+			color.Green("\n├─ Collection: %s", collection.Name)
+			color.Green("├─ Record ID:  %s", record.Id)
+			color.Green("├─ Email:      %s", record.Email())
+			if durationFlag > 0 {
+				color.Green("├─ Duration:   %ds", durationFlag)
+			} else {
+				color.Green("├─ Duration:   %ds (collection default)", collection.AuthToken.Duration)
+			}
+			color.Green("└─ Token:      %s\n\n", token)
+			return nil
+		},
+	}
+
+	command.Flags().Int64VarP(&durationFlag, "duration", "d", 0, "Custom token duration in seconds (0 = collection default)")
 
 	return command
 }
